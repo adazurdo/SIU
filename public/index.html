@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>MotoNav - Test</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <h1>MotoNav</h1>
+
+  <p>Conexion: <span id="connection-value">Desconectado</span></p>
+  <p>Modo: <span id="mode-value">idle</span></p>
+
+  <hr>
+
+  <button id="voice-toggle">Activar microfono</button>
+  <p>Estado voz: <span id="voice-status-value">Inactivo</span></p>
+  <p>Ultimo comando: <span id="last-command">-</span></p>
+
+  <hr>
+
+  <div id="action-log"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

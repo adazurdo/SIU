@@ -1,0 +1,10 @@
+body { font-family: sans-serif; padding: 20px; }
+
+.connected { color: green; }
+.disconnected { color: red; }
+
+#action-log { margin-top: 10px; font-size: 0.9em; }
+.log-entry { margin: 2px 0; }
+.log-entry.voice { color: blue; }
+.log-entry.system { color: gray; }
+.timestamp { color: #999; }

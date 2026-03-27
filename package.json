@@ -1,0 +1,26 @@
+{
+  "name": "siu",
+  "version": "1.0.0",
+  "description": "Sistema interactivo y ubicuo que permite al motorista controlar diferentes funciones",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adazurdo/SIU.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/adazurdo/SIU/issues"
+  },
+  "homepage": "https://github.com/adazurdo/SIU#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}

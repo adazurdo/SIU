@@ -23,15 +23,15 @@ export class VoiceController {
     this.onCommand = options.onCommand || (() => {});
     this.onStatusChange = options.onStatusChange || (() => {});
 
-    // Palabra de activacion del sistema
-    this.WAKE_WORD = 'hey motonav';
+    // Palabras de activacion del sistema (soporta variantes de pronunciacion)
+    this.WAKE_WORDS = ['hey motonav', 'hey motornav'];
 
     // Indica si el sistema esta esperando un comando tras la palabra de activacion
     this.isAwake = false;
 
-    // Temporizador para volver a modo dormido si no se recibe comando
+    // Temporizador opcional para volver a modo dormido
     this.awakeTimeout = null;
-    this.AWAKE_DURATION = 5000; // 5 segundos para decir el comando
+    this.AWAKE_DURATION = null; // null -> esperar comando sin expirar por tiempo
 
     // Instancia del reconocedor de voz
     this.recognition = null;
@@ -106,13 +106,24 @@ export class VoiceController {
    * @param {string} transcript - Texto reconocido por la Web Speech API
    */
   _handleTranscript(transcript) {
-    // Comprobar si contiene la palabra de activacion
-    if (transcript.includes(this.WAKE_WORD)) {
+    // Permitir comandos de control sin wake word para mejorar el flujo de confirmacion.
+    // Esto evita tener que repetir "hey motonav" justo antes de "confirmar".
+    const controlCommands = ['confirmar', 'cancelar', 'repetir'];
+    const isControlCommand = hasAnyWord(transcript, controlCommands);
+
+    if (isControlCommand) {
+      this._processCommand(transcript);
+      return;
+    }
+
+    // Comprobar si contiene alguna palabra de activacion
+    const wakeWordDetected = this.WAKE_WORDS.find((wakeWord) => transcript.includes(wakeWord));
+    if (wakeWordDetected) {
       console.log('[Voz] Palabra de activacion detectada!');
       this._activate();
 
       // Si hay texto despues de la palabra de activacion, procesarlo como comando
-      const commandAfterWake = transcript.split(this.WAKE_WORD).pop().trim();
+      const commandAfterWake = transcript.split(wakeWordDetected).pop().trim();
       if (commandAfterWake.length > 0) {
         this._processCommand(commandAfterWake);
       }
@@ -138,11 +149,13 @@ export class VoiceController {
       clearTimeout(this.awakeTimeout);
     }
 
-    this.awakeTimeout = setTimeout(() => {
-      this.isAwake = false;
-      this.onStatusChange('sleeping');
-      console.log('[Voz] Tiempo de espera agotado. Volviendo a modo dormido.');
-    }, this.AWAKE_DURATION);
+    if (typeof this.AWAKE_DURATION === 'number' && this.AWAKE_DURATION > 0) {
+      this.awakeTimeout = setTimeout(() => {
+        this.isAwake = false;
+        this.onStatusChange('sleeping');
+        console.log('[Voz] Tiempo de espera agotado. Volviendo a modo dormido.');
+      }, this.AWAKE_DURATION);
+    }
   }
 
   /**
@@ -188,4 +201,17 @@ export class VoiceController {
     this.onStatusChange('stopped');
     console.log('[Voz] Reconocimiento de voz detenido.');
   }
+}
+
+/**
+ * Detecta si existe una palabra completa del listado en el texto.
+ *
+ * @param {string} text
+ * @param {string[]} words
+ * @returns {boolean}
+ */
+function hasAnyWord(text, words) {
+  const escaped = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`(^|\\s|[.,;:!?¡¿])(?:${escaped.join('|')})(?=$|\\s|[.,;:!?¡¿])`, 'i');
+  return pattern.test(text);
 }

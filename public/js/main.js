@@ -57,7 +57,7 @@ const voiceController = new VoiceController({
   onStatusChange: (status) => {
     const statusMessages = {
       'listening': 'Escuchando... (di "Hey MotoNav")',
-      'awake': 'Esperando comando... (puedes hablar ahora)',
+      'awake': 'Escuchando! Di tu comando.',
       'sleeping': 'Escuchando... (di "Hey MotoNav")',
       'command-received': 'Comando recibido',
       'stopped': 'Inactivo',
@@ -195,7 +195,7 @@ async function runActuator(instruction) {
 
     case 'call_contact': {
       const contactName = String(payload.contactName || '').trim();
-      const digits = contactName.replace(/\D/g, '');
+      const digits = extractDialDigits(contactName);
 
       if (!digits) {
         throw new Error(`No hay numero disponible para "${contactName || 'contacto'}".`);
@@ -521,6 +521,58 @@ function getCurrentPosition(options) {
  */
 function reportActuatorStatus(status, message) {
   socket.emit('actuator-status', { status, message });
+}
+
+/**
+ * Extrae digitos a marcar desde texto libre o numero dictado en espanol.
+ *
+ * @param {string} input
+ * @returns {string}
+ */
+function extractDialDigits(input) {
+  const rawDigits = String(input || '').replace(/\D/g, '');
+  if (rawDigits) return rawDigits;
+
+  const normalized = normalizeForNumberParsing(input);
+  const tokens = normalized.split(' ').filter(Boolean);
+
+  const spokenDigits = {
+    cero: '0',
+    uno: '1',
+    un: '1',
+    una: '1',
+    dos: '2',
+    tres: '3',
+    cuatro: '4',
+    cinco: '5',
+    seis: '6',
+    siete: '7',
+    ocho: '8',
+    nueve: '9'
+  };
+
+  const digits = [];
+  for (const token of tokens) {
+    if (spokenDigits[token]) {
+      digits.push(spokenDigits[token]);
+    }
+  }
+
+  return digits.join('');
+}
+
+/**
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeForNumberParsing(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**

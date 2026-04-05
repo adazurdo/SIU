@@ -23,8 +23,17 @@ export class VoiceController {
     this.onCommand = options.onCommand || (() => {});
     this.onStatusChange = options.onStatusChange || (() => {});
 
-    // Palabras de activacion del sistema (soporta variantes de pronunciacion)
-    this.WAKE_WORDS = ['hey motonav', 'hey motornav'];
+    // Patrones de activacion tolerantes a variantes frecuentes de dictado
+    this.WAKE_PATTERNS = [
+      /\b(?:hey|ey|ei|oye)\s*moto\s*nav\b/i,
+      /\bmoto\s*nav\b/i,
+      /\bmotonav\b/i,
+      /\bmotornav\b/i
+    ];
+
+    // Durante los primeros ms tras iniciar microfono, permitimos comandos directos.
+    this.STARTUP_AUTO_WAKE_MS = 2500;
+    this.startedListeningAt = 0;
 
     // Indica si el sistema esta esperando un comando tras la palabra de activacion
     this.isAwake = false;
@@ -106,34 +115,50 @@ export class VoiceController {
    * @param {string} transcript - Texto reconocido por la Web Speech API
    */
   _handleTranscript(transcript) {
+    const normalizedTranscript = normalizeForMatching(transcript);
+
     // Permitir comandos de control sin wake word para mejorar el flujo de confirmacion.
     // Esto evita tener que repetir "hey motonav" justo antes de "confirmar".
     const controlCommands = ['confirmar', 'cancelar', 'repetir'];
-    const isControlCommand = hasAnyWord(transcript, controlCommands);
+    const isControlCommand = hasAnyWord(normalizedTranscript, controlCommands);
 
     if (isControlCommand) {
-      this._processCommand(transcript);
+      this._processCommand(normalizedTranscript);
       return;
     }
 
     // Comprobar si contiene alguna palabra de activacion
-    const wakeWordDetected = this.WAKE_WORDS.find((wakeWord) => transcript.includes(wakeWord));
-    if (wakeWordDetected) {
+    const wakeExtraction = extractCommandAfterWakeWord(transcript, this.WAKE_PATTERNS);
+    if (wakeExtraction.detected) {
       console.log('[Voz] Palabra de activacion detectada!');
       this._activate();
 
       // Si hay texto despues de la palabra de activacion, procesarlo como comando
-      const commandAfterWake = transcript.split(wakeWordDetected).pop().trim();
+      const commandAfterWake = wakeExtraction.commandAfterWake;
       if (commandAfterWake.length > 0) {
         this._processCommand(commandAfterWake);
       }
       return;
     }
 
+    // Ventana corta tras iniciar microfono para no perder el primer comando.
+    if (!this.isAwake && this._isWithinStartupWindow() && looksLikeDirectCommand(normalizedTranscript)) {
+      console.log('[Voz] Comando directo detectado en ventana de arranque.');
+      this._processCommand(normalizedTranscript);
+      return;
+    }
+
     // Si el sistema esta despierto, cualquier texto es un comando
     if (this.isAwake) {
-      this._processCommand(transcript);
+      this._processCommand(normalizedTranscript);
     }
+  }
+
+  _isWithinStartupWindow() {
+    if (!this.startedListeningAt) return false;
+
+    const elapsed = Date.now() - this.startedListeningAt;
+    return elapsed >= 0 && elapsed <= this.STARTUP_AUTO_WAKE_MS;
   }
 
   /**
@@ -184,6 +209,7 @@ export class VoiceController {
     }
 
     this.isActive = true;
+    this.startedListeningAt = Date.now();
     this.recognition.start();
     this.onStatusChange('listening');
     console.log('[Voz] Reconocimiento de voz iniciado. Di "Hey MotoNav" para activar.');
@@ -197,10 +223,77 @@ export class VoiceController {
 
     this.isActive = false;
     this.isAwake = false;
+    this.startedListeningAt = 0;
     this.recognition.stop();
     this.onStatusChange('stopped');
     console.log('[Voz] Reconocimiento de voz detenido.');
   }
+}
+
+/**
+ * Extrae el comando tras la wake word si existe.
+ *
+ * @param {string} transcript
+ * @param {RegExp[]} wakePatterns
+ * @returns {{ detected: boolean, commandAfterWake: string }}
+ */
+function extractCommandAfterWakeWord(transcript, wakePatterns) {
+  for (const pattern of wakePatterns) {
+    const match = transcript.match(pattern);
+    if (!match || typeof match.index !== 'number') continue;
+
+    const after = transcript
+      .slice(match.index + match[0].length)
+      .replace(/^[\s,;:.!?-]+/, '')
+      .trim();
+
+    return {
+      detected: true,
+      commandAfterWake: after
+    };
+  }
+
+  return {
+    detected: false,
+    commandAfterWake: ''
+  };
+}
+
+/**
+ * Heuristica minima para aceptar comandos directos al arrancar microfono.
+ *
+ * @param {string} transcript
+ * @returns {boolean}
+ */
+function looksLikeDirectCommand(transcript) {
+  const directCommandHints = [
+    'buscar gasolinera',
+    'gasolinera',
+    'llamar a',
+    'llama a',
+    'como llegar a',
+    'ir a',
+    'llevame a',
+    'navega a',
+    'ruta a'
+  ];
+
+  return directCommandHints.some((hint) => transcript.includes(hint));
+}
+
+/**
+ * Normaliza texto para comparaciones robustas.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeForMatching(text) {
+  return String(text)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**

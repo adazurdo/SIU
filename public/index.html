@@ -2,24 +2,62 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>MotoNav - Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MotoNav</title>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <h1>MotoNav</h1>
+  <header class="app-header">
+    <h1>MotoNav</h1>
+    <div class="header-status">
+      <span class="status-dot" id="connection-dot"></span>
+      <span id="connection-value">Desconectado</span>
+    </div>
+  </header>
 
-  <p>Conexion: <span id="connection-value">Desconectado</span></p>
-  <p>Modo: <span id="mode-value">idle</span></p>
+  <main>
+    <!-- Panel de estado del sistema -->
+    <section class="panel mode-panel" id="mode-panel">
+      <h2>Estado del sistema</h2>
+      <div class="mode-indicator" id="mode-indicator">
+        <span class="mode-icon" id="mode-icon">&#9679;</span>
+        <span class="mode-label" id="mode-value">idle</span>
+      </div>
+      <p class="mode-description" id="mode-description">Sistema en reposo. Activa el microfono y di "Hey MotoNav" para empezar.</p>
+    </section>
 
-  <hr>
+    <!-- Panel de control de voz -->
+    <section class="panel voice-panel">
+      <h2>Control de voz</h2>
+      <button id="voice-toggle" class="btn btn-primary">Activar microfono</button>
+      <p class="voice-status">Estado: <span id="voice-status-value">Inactivo</span></p>
+      <p class="voice-last-command">Ultimo comando: <em id="last-command">-</em></p>
+    </section>
 
-  <button id="voice-toggle">Activar microfono</button>
-  <p>Estado voz: <span id="voice-status-value">Inactivo</span></p>
-  <p>Ultimo comando: <span id="last-command">-</span></p>
+    <!-- Panel de comandos disponibles -->
+    <section class="panel commands-panel" id="commands-panel">
+      <h2>Comandos disponibles</h2>
+      <ul class="commands-list" id="commands-list">
+        <!-- Se rellena dinamicamente segun el modo -->
+      </ul>
+    </section>
 
-  <hr>
+    <!-- Panel de navegacion (visible solo al navegar) -->
+    <section class="panel nav-panel hidden" id="nav-panel">
+      <h2>Navegacion activa</h2>
+      <p class="nav-destination">Destino: <strong id="nav-destination">-</strong></p>
+      <div class="nav-step-box">
+        <span class="nav-step-label">Proxima indicacion</span>
+        <p class="nav-step-text" id="nav-step-text">-</p>
+      </div>
+    </section>
 
-  <div id="action-log"></div>
+    <!-- Registro de actividad -->
+    <section class="panel log-panel">
+      <h2>Registro de actividad</h2>
+      <div id="action-log"></div>
+    </section>
+  </main>
 
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="js/main.js"></script>

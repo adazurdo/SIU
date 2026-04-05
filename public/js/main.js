@@ -1,5 +1,5 @@
 /**
- * main.js - Modulo principal del cliente 
+ * main.js - Modulo principal del cliente
  *
  * Coordina la conexion con el servidor via Socket.IO y el modulo de
  * interaccion por voz. Actua como punto central que:
@@ -11,18 +11,76 @@
 
 import { VoiceController } from './voice.js';
 
-// Conexion con el servidor Socket.IO 
+// Conexion con el servidor Socket.IO
 
 const socket = io();
 
 // Referencias a los elementos del DOM / Interfaz
 
-const connectionValue = document.getElementById('connection-value');
-const modeValue = document.getElementById('mode-value');
-const voiceToggle = document.getElementById('voice-toggle');
+const connectionDot    = document.getElementById('connection-dot');
+const connectionValue  = document.getElementById('connection-value');
+const modePanel        = document.getElementById('mode-panel');
+const modeValue        = document.getElementById('mode-value');
+const modeIcon         = document.getElementById('mode-icon');
+const modeDescription  = document.getElementById('mode-description');
+const voiceToggle      = document.getElementById('voice-toggle');
 const voiceStatusValue = document.getElementById('voice-status-value');
-const lastCommandEl = document.getElementById('last-command');
-const actionLog = document.getElementById('action-log');
+const lastCommandEl    = document.getElementById('last-command');
+const commandsList     = document.getElementById('commands-list');
+const navPanel         = document.getElementById('nav-panel');
+const navDestination   = document.getElementById('nav-destination');
+const navStepText      = document.getElementById('nav-step-text');
+const actionLog        = document.getElementById('action-log');
+
+// Configuracion de modos: icono, descripcion y comandos disponibles
+const MODE_CONFIG = {
+  idle: {
+    icon: '⚫',
+    description: 'Sistema en reposo. Activa el microfono y di "Hey MotoNav" para empezar.',
+    commands: [
+      { tag: 'Hey MotoNav, ir a [destino]',      desc: 'Inicia la navegacion por voz hacia un destino.' },
+      { tag: 'Hey MotoNav, llevame a [destino]', desc: 'Alias de navegacion hacia un destino.' },
+      { tag: 'Hey MotoNav, buscar gasolinera',    desc: 'Localiza la gasolinera mas cercana.' },
+      { tag: 'Hey MotoNav, llamar a [contacto]', desc: 'Inicia una llamada (requiere confirmacion).' }
+    ]
+  },
+  listening: {
+    icon: '🎤',
+    description: 'Escuchando la palabra de activacion... Di "Hey MotoNav" para dar un comando.',
+    commands: [
+      { tag: 'Hey MotoNav, ir a [destino]',      desc: 'Inicia la navegacion por voz hacia un destino.' },
+      { tag: 'Hey MotoNav, llevame a [destino]', desc: 'Alias de navegacion hacia un destino.' },
+      { tag: 'Hey MotoNav, buscar gasolinera',    desc: 'Localiza la gasolinera mas cercana.' },
+      { tag: 'Hey MotoNav, llamar a [contacto]', desc: 'Inicia una llamada (requiere confirmacion).' }
+    ]
+  },
+  awake: {
+    icon: '🎤',
+    description: 'Palabra de activacion detectada. Habla ahora para dar tu comando.',
+    commands: [
+      { tag: 'ir a [destino]',      desc: 'Inicia la navegacion hacia un destino.' },
+      { tag: 'llevame a [destino]', desc: 'Alias de navegacion hacia un destino.' },
+      { tag: 'buscar gasolinera',    desc: 'Localiza la gasolinera mas cercana.' },
+      { tag: 'llamar a [contacto]', desc: 'Inicia una llamada.' }
+    ]
+  },
+  confirming: {
+    icon: '❓',
+    description: 'Hay una accion pendiente de confirmacion. Di "confirmar" para ejecutarla o "cancelar" para descartarla.',
+    commands: [
+      { tag: 'confirmar', desc: 'Ejecuta la accion pendiente.' },
+      { tag: 'cancelar',  desc: 'Descarta la accion y vuelve al reposo.' }
+    ]
+  },
+  navigating: {
+    icon: '📍',
+    description: 'Navegacion activa. Siguiendo la ruta hacia el destino.',
+    commands: [
+      { tag: 'repetir',  desc: 'Repite la ultima indicacion de navegacion.' },
+      { tag: 'cancelar', desc: 'Detiene la navegacion y vuelve al reposo.' }
+    ]
+  }
+};
 
 // Ultimo mensaje del sistema para soporte del comando "repetir"
 let lastSystemMessage = '';
@@ -37,7 +95,7 @@ const voiceNavigationState = {
   announcedApproachIndex: -1
 };
 
-// Inicializacion del controlador de voz 
+// Inicializacion del controlador de voz
 
 const voiceController = new VoiceController({
   /**
@@ -56,38 +114,45 @@ const voiceController = new VoiceController({
    */
   onStatusChange: (status) => {
     const statusMessages = {
-      'listening': 'Escuchando... (di "Hey MotoNav")',
-      'awake': 'Esperando comando... (puedes hablar ahora)',
-      'sleeping': 'Escuchando... (di "Hey MotoNav")',
+      'listening':        'Escuchando... (di "Hey MotoNav")',
+      'awake':            'Esperando comando... (puedes hablar ahora)',
+      'sleeping':         'Escuchando... (di "Hey MotoNav")',
       'command-received': 'Comando recibido',
-      'stopped': 'Inactivo',
-      'error': 'Error en el reconocimiento',
-      'no-support': 'Navegador no soportado'
+      'stopped':          'Inactivo',
+      'error':            'Error en el reconocimiento',
+      'no-support':       'Navegador no soportado'
     };
 
     voiceStatusValue.textContent = statusMessages[status] || status;
+
+    // Update voice-driven mode display optimistically so the UI feels responsive
+    // while the server confirms the actual mode via 'system-state'. The server
+    // state always wins if the two diverge.
+    if (status === 'listening' || status === 'sleeping') updateModeUI('listening');
+    if (status === 'awake') updateModeUI('awake');
+    if (status === 'stopped') updateModeUI('idle');
   }
 });
 
-// Eventos de Socket.IO 
+// Eventos de Socket.IO
 
 /** Evento: conexion establecida con el servidor */
 socket.on('connect', () => {
   connectionValue.textContent = 'Conectado';
-  connectionValue.className = 'value connected';
+  connectionDot.className = 'status-dot connected';
   addLogEntry('Conectado al servidor', 'system');
 });
 
 /** Evento: desconexion del servidor */
 socket.on('disconnect', () => {
   connectionValue.textContent = 'Desconectado';
-  connectionValue.className = 'value disconnected';
+  connectionDot.className = 'status-dot disconnected';
   addLogEntry('Desconectado del servidor', 'system');
 });
 
 /** Evento: el servidor envia una actualizacion del estado del sistema */
 socket.on('system-state', (state) => {
-  modeValue.textContent = state.mode;
+  updateModeUI(state.mode);
 });
 
 /** Evento: el servidor envia el resultado de una accion procesada */
@@ -123,14 +188,54 @@ voiceToggle.addEventListener('click', () => {
   }
 });
 
-// Funciones auxiliares 
+// Funciones auxiliares
+
+/**
+ * Actualiza el panel de modo, descripcion y lista de comandos segun el modo activo.
+ *
+ * @param {string} mode - Identificador del modo ('idle', 'listening', 'awake', 'confirming', 'navigating')
+ */
+function updateModeUI(mode) {
+  const config = MODE_CONFIG[mode] || MODE_CONFIG.idle;
+
+  // Actualizar etiqueta de modo
+  modeValue.textContent = mode;
+  modeIcon.textContent = config.icon;
+  modeDescription.textContent = config.description;
+
+  // Aplicar clase de color al panel segun el modo
+  modePanel.className = `panel mode-panel mode-${mode}`;
+
+  // Actualizar lista de comandos disponibles
+  commandsList.innerHTML = config.commands
+    .map((cmd) => `<li><span class="cmd-tag">${cmd.tag}</span><span class="cmd-desc">${cmd.desc}</span></li>`)
+    .join('');
+
+  // Mostrar u ocultar el panel de navegacion
+  if (mode === 'navigating') {
+    navPanel.classList.remove('hidden');
+  } else {
+    navPanel.classList.add('hidden');
+  }
+}
+
+/**
+ * Actualiza el panel de navegacion con el destino y la proxima indicacion.
+ *
+ * @param {string} destination - Nombre del destino
+ * @param {string} step - Texto de la proxima indicacion
+ */
+function updateNavPanel(destination, step) {
+  navDestination.textContent = destination || '-';
+  navStepText.textContent = step || '-';
+}
 
 /**
  * Anade una entrada al log de acciones en la interfaz.
- * 
+ *
  * Cada entrada incluye una marca de tiempo y un tipo (voice, system)
  * que determina el color del texto.
- * 
+ *
  * @param {string} message - Mensaje a mostrar en el log
  * @param {string} type - Tipo de entrada: 'voice' o 'system'
  */
@@ -149,6 +254,9 @@ function addLogEntry(message, type = 'system') {
     actionLog.removeChild(actionLog.lastChild);
   }
 }
+
+// Inicializar UI en modo idle al cargar
+updateModeUI('idle');
 
 /**
  * Ejecuta el actuador recibido desde el servidor.
@@ -273,6 +381,8 @@ async function startVoiceNavigation(destination) {
     speak(`Ruta iniciada hacia ${destinationName}. Distancia aproximada ${distanceText}.`);
     speak(`Primera indicacion: ${firstInstruction}`);
 
+    updateNavPanel(destinationName, firstInstruction);
+
     voiceNavigationState.watchId = navigator.geolocation.watchPosition(
       handleNavigationPosition,
       handleNavigationWatchError,
@@ -360,6 +470,10 @@ function handleNavigationPosition(position) {
 
     speak(`Ahora: ${nextStep.instruction}`);
     addLogEntry(`Siguiente paso: ${nextStep.instruction}`, 'system');
+    updateNavPanel(
+      simplifyDestinationName(voiceNavigationState.destination),
+      nextStep.instruction
+    );
   }
 }
 

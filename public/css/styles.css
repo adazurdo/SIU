@@ -1,10 +1,266 @@
-body { font-family: sans-serif; padding: 20px; }
+/* =============================================
+   Reset / base
+   ============================================= */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-.connected { color: green; }
-.disconnected { color: red; }
+:root {
+  --breakpoint-mobile: 600px;
+}
 
-#action-log { margin-top: 10px; font-size: 0.9em; }
-.log-entry { margin: 2px 0; }
-.log-entry.voice { color: blue; }
-.log-entry.system { color: gray; }
-.timestamp { color: #999; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e6edf3;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* =============================================
+   Header
+   ============================================= */
+.app-header {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-header h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #f0a500;
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #8b949e;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6e7681;
+  display: inline-block;
+}
+
+.status-dot.connected    { background: #3fb950; }
+.status-dot.disconnected { background: #f85149; }
+
+/* =============================================
+   Main layout – two-column grid
+   ============================================= */
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto;
+  gap: 16px;
+  padding: 20px 24px;
+  flex: 1;
+}
+
+/* =============================================
+   Generic panel card
+   ============================================= */
+.panel {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+
+.panel h2 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8b949e;
+  margin-bottom: 14px;
+}
+
+/* =============================================
+   Mode panel
+   ============================================= */
+.mode-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mode-icon {
+  font-size: 1.8rem;
+}
+
+.mode-label {
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.mode-description {
+  font-size: 0.85rem;
+  color: #8b949e;
+  line-height: 1.5;
+}
+
+/* Mode-specific colors */
+.mode-idle       .mode-label { color: #8b949e; }
+.mode-listening  .mode-label { color: #58a6ff; }
+.mode-awake      .mode-label { color: #79c0ff; }
+.mode-confirming .mode-label { color: #d29922; }
+.mode-navigating .mode-label { color: #3fb950; }
+
+/* =============================================
+   Voice panel
+   ============================================= */
+.btn {
+  display: inline-block;
+  padding: 9px 18px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.btn:active { transform: scale(0.97); }
+
+.btn-primary          { background: #238636; color: #fff; }
+.btn-primary:hover    { background: #2ea043; }
+.btn-primary.active   { background: #da3633; }
+.btn-primary.active:hover { background: #f85149; }
+
+.voice-status,
+.voice-last-command {
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: #8b949e;
+}
+
+.voice-last-command em {
+  font-style: normal;
+  color: #e6edf3;
+}
+
+/* =============================================
+   Commands panel
+   ============================================= */
+.commands-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.commands-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.cmd-tag {
+  flex-shrink: 0;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #79c0ff;
+  white-space: nowrap;
+}
+
+.cmd-desc {
+  color: #8b949e;
+  line-height: 1.4;
+}
+
+/* =============================================
+   Navigation panel
+   ============================================= */
+.nav-destination {
+  font-size: 0.85rem;
+  color: #8b949e;
+  margin-bottom: 12px;
+}
+
+.nav-destination strong {
+  color: #e6edf3;
+}
+
+.nav-step-box {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.nav-step-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8b949e;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.nav-step-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #3fb950;
+  line-height: 1.4;
+}
+
+/* =============================================
+   Log panel – spans full width
+   ============================================= */
+.log-panel {
+  grid-column: 1 / -1;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+#action-log {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.log-entry {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 2px 0;
+  border-bottom: 1px solid #21262d;
+}
+
+.log-entry.voice  { color: #58a6ff; }
+.log-entry.system { color: #8b949e; }
+
+.timestamp { color: #6e7681; margin-right: 6px; }
+
+/* =============================================
+   Utility
+   ============================================= */
+.hidden { display: none !important; }
+
+/* =============================================
+   Responsive – stack on narrow screens
+   ============================================= */
+@media (max-width: 600px) { /* --breakpoint-mobile */
+  main {
+    grid-template-columns: 1fr;
+  }
+  .log-panel { grid-column: 1; }
+}
+

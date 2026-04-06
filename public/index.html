@@ -2,26 +2,81 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>MotoNav - Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MotoNav — HUD Visor</title>
+  <meta name="description" content="MotoNav: sistema de control para casco de moto con comandos de voz y gestos de cabeza. Interfaz HUD para visera.">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <h1>MotoNav</h1>
 
-  <p>Conexion: <span id="connection-value">Desconectado</span></p>
-  <p>Modo: <span id="mode-value">idle</span></p>
+  <!-- Layer 0: Road background -->
+  <div id="hud-background" aria-hidden="true"></div>
 
-  <hr>
+  <!-- Layer 1: Dark overlay with vignette -->
+  <div id="hud-overlay" aria-hidden="true"></div>
 
-  <button id="voice-toggle">Activar microfono</button>
-  <p>Estado voz: <span id="voice-status-value">Inactivo</span></p>
-  <p>Ultimo comando: <span id="last-command">-</span></p>
+  <!-- Layer 2: HUD Content -->
+  <div id="hud-container">
 
-  <hr>
+    <!-- Top: Conversation bubbles -->
+    <div id="conversation-zone" aria-live="polite" aria-label="Conversacion con MotoNav"></div>
 
-  <div id="action-log"></div>
+    <!-- Center: Navigation banner -->
+    <div id="navigation-banner" role="status" aria-label="Indicacion de navegacion">
+      <div class="nav-icon">🧭</div>
+      <span class="nav-text" id="nav-instruction-text"></span>
+    </div>
 
+    <!-- Center: Confirmation prompt -->
+    <div id="confirmation-zone" role="dialog" aria-label="Confirmacion de accion">
+      <div id="confirmation-question">
+        <span class="confirm-icon">🤖</span>
+        <span id="confirmation-text"></span>
+      </div>
+      <div class="confirmation-actions">
+        <span class="confirm-action accept">Asiente para ACEPTAR</span>
+        <span class="confirm-action reject">Niega para DESHACER</span>
+      </div>
+    </div>
+
+    <!-- Bottom: Controls bar -->
+    <div id="controls-bar">
+      <button id="mic-toggle" class="hud-btn" aria-label="Activar microfono" title="Microfono">
+        🎤
+      </button>
+
+      <div id="status-badge" data-mode="idle">
+        <span id="status-dot"></span>
+        <span id="status-text">En reposo</span>
+      </div>
+
+      <button id="camera-toggle" class="hud-btn camera" aria-label="Activar camara para gestos" title="Camara gestos">
+        📷
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Voice status overlay -->
+  <div id="voice-status-overlay"></div>
+
+  <!-- Connection indicator -->
+  <div id="connection-indicator" aria-live="polite">
+    <span id="connection-dot"></span>
+    <span id="connection-text">Desconectado</span>
+  </div>
+
+  <!-- Hidden video for gesture detection -->
+  <video id="gesture-video" autoplay playsinline></video>
+
+  <!-- Dependencies -->
   <script src="/socket.io/socket.io.js"></script>
+
+  <!-- MediaPipe for gestures -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <!-- App modules -->
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

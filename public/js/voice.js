@@ -25,9 +25,9 @@ export class VoiceController {
 
     // Patrones de activacion tolerantes a variantes frecuentes de dictado
     this.WAKE_PATTERNS = [
-      /\b(?:hey|ey|ei|oye)\s*moto\s*nav\b/i,
-      /\bmoto\s*nav\b/i,
-      /\bmotonav\b/i,
+      /\b(?:hey|ey|ei|oye)\s*moto\s*nav(?:e)?\b/i,
+      /\bmoto\s*nav(?:e)?\b/i,
+      /\bmotonav(?:e)?\b/i,
       /\bmotornav\b/i
     ];
 
@@ -89,13 +89,13 @@ export class VoiceController {
 
     // Evento: error en el reconocimiento
     this.recognition.onerror = (event) => {
-      console.error(`[Voz] Error: ${event.error}`);
-
       // Si el error es 'no-speech', simplemente reiniciar (es normal en uso continuo)
       if (event.error === 'no-speech') {
+        console.debug('[Voz] Sin voz detectada en este ciclo; reintentando.');
         return;
       }
 
+      console.error(`[Voz] Error: ${event.error}`);
       this.onStatusChange('error');
     };
 
@@ -128,7 +128,7 @@ export class VoiceController {
     }
 
     // Comprobar si contiene alguna palabra de activacion
-    const wakeExtraction = extractCommandAfterWakeWord(transcript, this.WAKE_PATTERNS);
+    const wakeExtraction = extractWakeCommand(normalizedTranscript, this.WAKE_PATTERNS);
     if (wakeExtraction.detected) {
       console.log('[Voz] Palabra de activacion detectada!');
       this._activate();
@@ -237,12 +237,28 @@ export class VoiceController {
  * @param {RegExp[]} wakePatterns
  * @returns {{ detected: boolean, commandAfterWake: string }}
  */
-function extractCommandAfterWakeWord(transcript, wakePatterns) {
+function extractWakeCommand(normalizedTranscript, wakePatterns) {
+  const strictWake = extractCommandAfterWakeWord(normalizedTranscript, wakePatterns);
+  if (strictWake.detected) {
+    return strictWake;
+  }
+
+  return extractCommandAfterLooseMotoWake(normalizedTranscript);
+}
+
+/**
+ * Extrae el comando tras una wake word reconocida de forma estricta.
+ *
+ * @param {string} normalizedTranscript
+ * @param {RegExp[]} wakePatterns
+ * @returns {{ detected: boolean, commandAfterWake: string }}
+ */
+function extractCommandAfterWakeWord(normalizedTranscript, wakePatterns) {
   for (const pattern of wakePatterns) {
-    const match = transcript.match(pattern);
+    const match = normalizedTranscript.match(pattern);
     if (!match || typeof match.index !== 'number') continue;
 
-    const after = transcript
+    const after = normalizedTranscript
       .slice(match.index + match[0].length)
       .replace(/^[\s,;:.!?-]+/, '')
       .trim();
@@ -250,6 +266,45 @@ function extractCommandAfterWakeWord(transcript, wakePatterns) {
     return {
       detected: true,
       commandAfterWake: after
+    };
+  }
+
+  return {
+    detected: false,
+    commandAfterWake: ''
+  };
+}
+
+/**
+ * Fallback tolerante a errores frecuentes de dictado tras "hey moto...".
+ * Solo activa si lo que sigue parece un comando valido del sistema.
+ *
+ * @param {string} normalizedTranscript
+ * @returns {{ detected: boolean, commandAfterWake: string }}
+ */
+function extractCommandAfterLooseMotoWake(normalizedTranscript) {
+  const match = normalizedTranscript.match(/\b(?:hey|ey|ei|oye)\s+moto[a-z]*\b[\s,;:.!?-]*(.+)$/i);
+  if (!match || !match[1]) {
+    return {
+      detected: false,
+      commandAfterWake: ''
+    };
+  }
+
+  const commandAfterWake = match[1].trim();
+  const controlCommands = ['confirmar', 'cancelar', 'repetir'];
+
+  if (commandAfterWake.length === 0) {
+    return {
+      detected: true,
+      commandAfterWake: ''
+    };
+  }
+
+  if (looksLikeDirectCommand(commandAfterWake) || hasAnyWord(commandAfterWake, controlCommands)) {
+    return {
+      detected: true,
+      commandAfterWake
     };
   }
 

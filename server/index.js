@@ -53,6 +53,7 @@ app.use(createCorsMiddleware({ allowedOrigins }));
 app.get('/api/geocode', apiRateLimiter, async (req, res) => {
 
   const query = extractInputText(req.query.query);
+  const near = parseLatLonParam(extractInputText(req.query.near));
 
   if (!query) {
     sendApiError(res, {
@@ -64,9 +65,13 @@ app.get('/api/geocode', apiRateLimiter, async (req, res) => {
   }
 
   try {
-    const result = await geocodeDestination(query, { timeoutMs: EXTERNAL_REQUEST_TIMEOUT_MS });
+    const result = await geocodeDestination(query, {
+      timeoutMs: EXTERNAL_REQUEST_TIMEOUT_MS,
+      near
+    });
     logEvent('info', 'api.geocode.success', {
       query,
+      near,
       hasName: Boolean(result.name)
     });
     res.json(result);

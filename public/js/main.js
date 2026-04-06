@@ -1,33 +1,50 @@
 /**
- * main.js - Modulo principal del cliente 
+ * main.js - Módulo principal del cliente MotoNav HUD
  *
- * Coordina la conexion con el servidor via Socket.IO y el modulo de
- * interaccion por voz. Actua como punto central que:
+ * Coordina la conexión con el servidor via Socket.IO, el módulo de
+ * interacción por voz, el módulo de gestos y el renderizado del HUD.
+ *
+ * Actúa como punto central que:
  *   1. Conecta con el servidor Socket.IO
- *   2. Inicializa el modulo de voz (voice.js)
- *   3. Envia los comandos detectados al servidor
- *   4. Recibe las respuestas del servidor y actualiza la interfaz
+ *   2. Inicializa el módulo de voz (voice.js)
+ *   3. Inicializa el módulo de gestos (gestures.js)
+ *   4. Envia los comandos detectados al servidor
+ *   5. Recibe las respuestas del servidor y actualiza el HUD
  */
 
 import { VoiceController } from './voice.js';
+import { GestureController } from './gestures.js';
+import {
+  showUserBubble,
+  showSystemBubble,
+  showNavigationBanner,
+  updateNavigationInstruction,
+  hideNavigationBanner,
+  showConfirmationPrompt,
+  hideConfirmationPrompt,
+  updateStatusBadge,
+  setMicrophoneActive,
+  setCameraActive,
+  setConnectionStatus,
+  showVoiceStatus,
+  hideVoiceStatus
+} from './hud-renderer.js';
 
-// Conexion con el servidor Socket.IO 
+// ─── Conexión con el servidor Socket.IO ─────────────────────
 
 const socket = io();
 
-// Referencias a los elementos del DOM / Interfaz
+// ─── Referencias a elementos del DOM ────────────────────────
 
-const connectionValue = document.getElementById('connection-value');
-const modeValue = document.getElementById('mode-value');
-const voiceToggle = document.getElementById('voice-toggle');
-const voiceStatusValue = document.getElementById('voice-status-value');
-const lastCommandEl = document.getElementById('last-command');
-const actionLog = document.getElementById('action-log');
+const micToggle = document.getElementById('mic-toggle');
+const cameraToggle = document.getElementById('camera-toggle');
+const gestureVideo = document.getElementById('gesture-video');
 
-// Ultimo mensaje del sistema para soporte del comando "repetir"
+// ─── Estado interno ─────────────────────────────────────────
+
 let lastSystemMessage = '';
+let currentMode = 'idle';
 
-// Estado de la navegacion por voz interna
 const voiceNavigationState = {
   active: false,
   watchId: null,
@@ -37,122 +54,140 @@ const voiceNavigationState = {
   announcedApproachIndex: -1
 };
 
-// Inicializacion del controlador de voz 
+// ─── Inicialización del controlador de voz ──────────────────
 
 const voiceController = new VoiceController({
-  /**
-   * Callback que se ejecuta cuando se reconoce un comando de voz.
-   * Envia el comando al servidor a traves de Socket.IO.
-   */
   onCommand: (command) => {
-    lastCommandEl.textContent = command;
+    showUserBubble(command);
     socket.emit('voice-command', { command });
-    addLogEntry(`Comando de voz: "${command}"`, 'voice');
   },
 
-  /**
-   * Callback que se ejecuta cuando cambia el estado del reconocimiento de voz.
-   * Actualiza la interfaz para reflejar el estado actual.
-   */
   onStatusChange: (status) => {
     const statusMessages = {
-      'listening': 'Escuchando... (di "Hey MotoNav")',
-      'awake': 'Escuchando! Di tu comando.',
-      'sleeping': 'Escuchando... (di "Hey MotoNav")',
+      'listening': 'Escuchando… (di "Hey MotoNav")',
+      'awake': '¡Escuchando! Di tu comando.',
+      'sleeping': 'Escuchando… (di "Hey MotoNav")',
       'command-received': 'Comando recibido',
       'stopped': 'Inactivo',
       'error': 'Error en el reconocimiento',
       'no-support': 'Navegador no soportado'
     };
 
-    voiceStatusValue.textContent = statusMessages[status] || status;
+    const message = statusMessages[status] || status;
+
+    if (status === 'awake' || status === 'command-received') {
+      showVoiceStatus(message);
+
+      if (status === 'command-received') {
+        setTimeout(hideVoiceStatus, 2000);
+      }
+    } else if (status === 'listening' || status === 'sleeping') {
+      showVoiceStatus(message);
+    } else if (status === 'stopped') {
+      hideVoiceStatus();
+    }
   }
 });
 
-// Eventos de Socket.IO 
+// ─── Inicialización del controlador de gestos ───────────────
 
-/** Evento: conexion establecida con el servidor */
+const gestureController = new GestureController({
+  onNod: () => {
+    showUserBubble('👍 Asentimiento detectado');
+    socket.emit('voice-command', { command: 'confirmar' });
+  },
+
+  onShake: () => {
+    showUserBubble('👎 Negación detectada');
+    socket.emit('voice-command', { command: 'cancelar' });
+  },
+
+  onStatusChange: (status) => {
+    if (status === 'active') {
+      setCameraActive(true);
+      showSystemBubble('Cámara de gestos activada. Asiente o niega con la cabeza.');
+    } else if (status === 'inactive') {
+      setCameraActive(false);
+    } else if (status === 'loading') {
+      showSystemBubble('Inicializando detección de gestos…');
+    } else if (status === 'error') {
+      setCameraActive(false);
+      showSystemBubble('Error al iniciar la cámara de gestos.');
+    }
+  }
+});
+
+// ─── Eventos de Socket.IO ───────────────────────────────────
+
 socket.on('connect', () => {
-  connectionValue.textContent = 'Conectado';
-  connectionValue.className = 'value connected';
-  addLogEntry('Conectado al servidor', 'system');
+  setConnectionStatus(true);
 });
 
-/** Evento: desconexion del servidor */
 socket.on('disconnect', () => {
-  connectionValue.textContent = 'Desconectado';
-  connectionValue.className = 'value disconnected';
-  addLogEntry('Desconectado del servidor', 'system');
+  setConnectionStatus(false);
 });
 
-/** Evento: el servidor envia una actualizacion del estado del sistema */
 socket.on('system-state', (state) => {
-  modeValue.textContent = state.mode;
+  currentMode = state.mode;
+  updateStatusBadge(state.mode);
+
+  if (state.mode === 'confirming' && state.pendingAction) {
+    const actionDescriptions = {
+      'call_contact': `¿Quieres llamar a ${state.pendingAction.payload?.contactName || 'contacto'}?`,
+      'start_voice_navigation': `¿Navegar hacia ${state.pendingAction.payload?.destination || 'destino'}?`,
+      'navigate_google_maps_directions': `¿Abrir ruta hacia ${state.pendingAction.payload?.destination || 'destino'}?`,
+      'navigate_google_maps': `¿Buscar ${state.pendingAction.payload?.query || 'ubicación'}?`
+    };
+
+    const description = actionDescriptions[state.pendingAction.type]
+      || `¿Ejecutar ${state.pendingAction.type}?`;
+
+    showConfirmationPrompt(description);
+  } else {
+    hideConfirmationPrompt();
+  }
 });
 
-/** Evento: el servidor envia el resultado de una accion procesada */
 socket.on('action-result', (result) => {
-  addLogEntry(result.message, 'system');
+  showSystemBubble(result.message);
   lastSystemMessage = result.message;
 });
 
-/** Evento: el servidor ordena ejecutar un actuador en el cliente */
 socket.on('actuator-exec', async (instruction) => {
   try {
     await runActuator(instruction);
     reportActuatorStatus('ok', `Actuador ejecutado: ${instruction?.type || 'desconocido'}`);
   } catch (error) {
     const details = error instanceof Error ? error.message : String(error);
-    addLogEntry(`Error al ejecutar actuador: ${details}`, 'system');
+    showSystemBubble(`Error: ${details}`);
     reportActuatorStatus('error', `Fallo en ${instruction?.type || 'desconocido'}: ${details}`);
   }
 });
 
-// Botones de la interfaz
+// ─── Botones de la interfaz ─────────────────────────────────
 
-/** Boton para activar/desactivar el reconocimiento de voz */
-voiceToggle.addEventListener('click', () => {
+micToggle.addEventListener('click', () => {
   if (voiceController.isActive) {
     voiceController.stop();
-    voiceToggle.textContent = 'Activar microfono';
-    voiceToggle.classList.remove('active');
+    setMicrophoneActive(false);
   } else {
     voiceController.start();
-    voiceToggle.textContent = 'Desactivar microfono';
-    voiceToggle.classList.add('active');
+    setMicrophoneActive(true);
   }
 });
 
-// Funciones auxiliares 
-
-/**
- * Anade una entrada al log de acciones en la interfaz.
- * 
- * Cada entrada incluye una marca de tiempo y un tipo (voice, system)
- * que determina el color del texto.
- * 
- * @param {string} message - Mensaje a mostrar en el log
- * @param {string} type - Tipo de entrada: 'voice' o 'system'
- */
-function addLogEntry(message, type = 'system') {
-  const entry = document.createElement('div');
-  entry.className = `log-entry ${type}`;
-
-  const timestamp = new Date().toLocaleTimeString('es-ES');
-  entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
-
-  // Insertar al principio para que las mas recientes se vean arriba
-  actionLog.insertBefore(entry, actionLog.firstChild);
-
-  // Limitar el numero de entradas en el log
-  while (actionLog.children.length > 50) {
-    actionLog.removeChild(actionLog.lastChild);
+cameraToggle.addEventListener('click', () => {
+  if (gestureController.isActive) {
+    gestureController.stop();
+  } else {
+    gestureController.start(gestureVideo);
   }
-}
+});
+
+// ─── Funciones de actuadores ────────────────────────────────
 
 /**
  * Ejecuta el actuador recibido desde el servidor.
- *
  * @param {{ type?: string, payload?: object }} instruction
  */
 async function runActuator(instruction) {
@@ -162,11 +197,9 @@ async function runActuator(instruction) {
   switch (type) {
     case 'start_voice_navigation': {
       const destination = String(payload.destination || '').trim();
-
       if (!destination) {
-        throw new Error('No se detecto un destino para iniciar navegacion por voz.');
+        throw new Error('No se detectó un destino para iniciar navegación por voz.');
       }
-
       await startVoiceNavigation(destination);
       break;
     }
@@ -178,11 +211,9 @@ async function runActuator(instruction) {
 
     case 'navigate_google_maps_directions': {
       const destination = String(payload.destination || '').trim();
-
       if (!destination) {
-        throw new Error('No se detecto un destino para calcular la ruta.');
+        throw new Error('No se detectó un destino para calcular la ruta.');
       }
-
       await startVoiceNavigation(destination);
       break;
     }
@@ -198,19 +229,19 @@ async function runActuator(instruction) {
       const digits = extractDialDigits(contactName);
 
       if (!digits) {
-        throw new Error(`No hay numero disponible para "${contactName || 'contacto'}".`);
+        throw new Error(`No hay número disponible para "${contactName || 'contacto'}".`);
       }
 
       const callUrl = `tel:${digits}`;
       window.location.href = callUrl;
-      addLogEntry(`Intentando llamar al numero ${digits}`, 'system');
+      showSystemBubble(`Llamando al número ${digits}…`);
       break;
     }
 
     case 'repeat_last_message': {
-      const text = lastSystemMessage || 'No hay ninguna indicacion anterior para repetir.';
+      const text = lastSystemMessage || 'No hay ninguna indicación anterior para repetir.';
       speak(text);
-      addLogEntry(`Repetir: ${text}`, 'system');
+      showSystemBubble(`Repitiendo: ${text}`);
       break;
     }
 
@@ -219,12 +250,8 @@ async function runActuator(instruction) {
   }
 }
 
-/**
- * Inicia una navegacion por voz propia usando geocodificacion + ruta.
- * Si falla, abre Google Maps como fallback para no bloquear al usuario.
- *
- * @param {string} destination
- */
+// ─── Navegación por voz ─────────────────────────────────────
+
 async function startVoiceNavigation(destination) {
   stopVoiceNavigation(false);
 
@@ -234,12 +261,14 @@ async function startVoiceNavigation(destination) {
 
     if (!origin) {
       const reason = originInfo.error ? ` Motivo: ${originInfo.error}` : '';
-      addLogEntry(`No tengo acceso a tu ubicacion.${reason} No puedo iniciar navegacion por voz.`, 'system');
-      speak('No tengo acceso fiable a tu ubicacion. No puedo iniciar la navegacion por voz.');
+      showSystemBubble(`No tengo acceso a tu ubicación.${reason}`);
+      speak('No tengo acceso fiable a tu ubicación. No puedo iniciar la navegación por voz.');
       return;
     }
 
-    const geocode = await fetchJson(`/api/geocode?query=${encodeURIComponent(destination)}`);
+    const geocode = await fetchJson(
+      `/api/geocode?query=${encodeURIComponent(destination)}&near=${encodeURIComponent(origin)}`
+    );
     const destinationCoord = `${geocode.lat},${geocode.lon}`;
     const route = await fetchJson(
       `/api/route?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destinationCoord)}`
@@ -263,15 +292,16 @@ async function startVoiceNavigation(destination) {
 
     const distanceKm = Number(route.distance || 0) / 1000;
     const distanceText = Number.isFinite(distanceKm) && distanceKm > 0
-      ? `${distanceKm.toFixed(1)} kilometros`
+      ? `${distanceKm.toFixed(1)} kilómetros`
       : 'distancia no disponible';
 
     const firstInstruction = steps[firstStepIndex]?.instruction || 'Comienza la ruta.';
     const destinationName = simplifyDestinationName(voiceNavigationState.destination);
 
-    addLogEntry(`Navegacion por voz iniciada hacia: ${destinationName}`, 'system');
+    showSystemBubble(`Ruta calculada hacia ${destinationName}. ${distanceText}.`);
+    showNavigationBanner(firstInstruction);
     speak(`Ruta iniciada hacia ${destinationName}. Distancia aproximada ${distanceText}.`);
-    speak(`Primera indicacion: ${firstInstruction}`);
+    speak(`Primera indicación: ${firstInstruction}`);
 
     voiceNavigationState.watchId = navigator.geolocation.watchPosition(
       handleNavigationPosition,
@@ -284,16 +314,11 @@ async function startVoiceNavigation(destination) {
     );
   } catch (error) {
     const details = error instanceof Error ? error.message : String(error);
-    addLogEntry(`No pude iniciar navegacion por voz interna: ${details}`, 'system');
-    speak('No pude iniciar la navegacion por voz interna.');
+    showSystemBubble(`No pude iniciar navegación: ${details}`);
+    speak('No pude iniciar la navegación por voz interna.');
   }
 }
 
-/**
- * Detiene la navegacion por voz actual y limpia estado interno.
- *
- * @param {boolean} announce
- */
 function stopVoiceNavigation(announce = false) {
   if (voiceNavigationState.watchId !== null && navigator.geolocation) {
     navigator.geolocation.clearWatch(voiceNavigationState.watchId);
@@ -308,17 +333,14 @@ function stopVoiceNavigation(announce = false) {
   voiceNavigationState.nextStepIndex = 0;
   voiceNavigationState.announcedApproachIndex = -1;
 
+  hideNavigationBanner();
+
   if (announce && wasActive) {
-    addLogEntry('Navegacion por voz detenida.', 'system');
-    speak('Navegacion por voz detenida.');
+    showSystemBubble('Navegación por voz detenida.');
+    speak('Navegación por voz detenida.');
   }
 }
 
-/**
- * Gestiona cada actualizacion de posicion durante la navegacion por voz.
- *
- * @param {GeolocationPosition} position
- */
 function handleNavigationPosition(position) {
   if (!voiceNavigationState.active) return;
 
@@ -339,14 +361,12 @@ function handleNavigationPosition(position) {
     Number(currentStep.location.lon)
   );
 
-  // Aviso anticipado de la siguiente maniobra
   if (distanceToStep <= 120 && voiceNavigationState.announcedApproachIndex !== voiceNavigationState.nextStepIndex) {
     speak(`En aproximadamente ${Math.max(20, Math.round(distanceToStep))} metros, ${currentStep.instruction}`);
-    addLogEntry(`Proxima maniobra: ${currentStep.instruction}`, 'system');
+    updateNavigationInstruction(currentStep.instruction);
     voiceNavigationState.announcedApproachIndex = voiceNavigationState.nextStepIndex;
   }
 
-  // Consideramos el paso completado al acercarnos lo suficiente al punto de maniobra
   if (distanceToStep <= 25) {
     voiceNavigationState.nextStepIndex += 1;
     voiceNavigationState.announcedApproachIndex = -1;
@@ -359,34 +379,27 @@ function handleNavigationPosition(position) {
     }
 
     speak(`Ahora: ${nextStep.instruction}`);
-    addLogEntry(`Siguiente paso: ${nextStep.instruction}`, 'system');
+    updateNavigationInstruction(nextStep.instruction);
   }
 }
 
-/**
- * Maneja errores del seguimiento GPS en navegacion por voz.
- */
 function handleNavigationWatchError() {
-  addLogEntry('Se perdio el seguimiento de ubicacion durante la navegacion.', 'system');
-  speak('He perdido tu ubicacion temporalmente.');
+  showSystemBubble('Se perdió el seguimiento de ubicación durante la navegación.');
+  speak('He perdido tu ubicación temporalmente.');
 }
 
-/**
- * Marca la navegacion como completada y anuncia llegada.
- */
 function completeVoiceNavigation() {
   const destination = simplifyDestinationName(voiceNavigationState.destination || 'el destino');
   stopVoiceNavigation(false);
-  addLogEntry(`Llegada estimada a ${destination}.`, 'system');
+  showSystemBubble(`Has llegado a ${destination}.`);
+  showNavigationBanner(`🏁 Has llegado a ${destination}`);
   speak(`Has llegado a ${destination}.`);
+
+  setTimeout(hideNavigationBanner, 8000);
 }
 
-/**
- * Realiza fetch de JSON y lanza error si la respuesta no es valida.
- *
- * @param {string} url
- * @returns {Promise<any>}
- */
+// ─── Funciones auxiliares ───────────────────────────────────
+
 async function fetchJson(url) {
   const response = await fetch(url);
   const data = await response.json().catch(() => ({}));
@@ -398,12 +411,6 @@ async function fetchJson(url) {
   return data;
 }
 
-/**
- * Busca el primer paso util para comenzar a guiar (salta "Empieza la ruta" si aplica).
- *
- * @param {Array<{instruction?: string}>} steps
- * @returns {number}
- */
 function getFirstNavigableStepIndex(steps) {
   const idx = steps.findIndex((step) => {
     const text = String(step?.instruction || '').toLowerCase();
@@ -413,11 +420,6 @@ function getFirstNavigableStepIndex(steps) {
   return idx >= 0 ? idx : 0;
 }
 
-/**
- * Distancia aproximada entre dos coordenadas usando formula de Haversine.
- *
- * @returns {number} metros
- */
 function distanceInMeters(lat1, lon1, lat2, lon2) {
   const toRad = (deg) => (deg * Math.PI) / 180;
   const earthRadius = 6371000;
@@ -434,30 +436,17 @@ function distanceInMeters(lat1, lon1, lat2, lon2) {
   return earthRadius * c;
 }
 
-/**
- * Acorta nombres largos de destino para que suenen mejor en TTS.
- *
- * @param {string} name
- * @returns {string}
- */
 function simplifyDestinationName(name) {
   const clean = String(name || '').replace(/\s+/g, ' ').trim();
   return clean.length > 80 ? `${clean.slice(0, 77)}...` : clean;
 }
 
-/**
- * Intenta obtener el origen actual del usuario via Geolocation API.
- * Si falla, devuelve el motivo para facilitar diagnostico.
- *
- * @returns {Promise<{origin: string|null, error: string|null}>}
- */
 async function getCurrentOrigin() {
   if (!navigator.geolocation) {
-    return { origin: null, error: 'Geolocalizacion no soportada por este navegador.' };
+    return { origin: null, error: 'Geolocalización no soportada por este navegador.' };
   }
 
   try {
-    // Primer intento: alta precision
     let position = await getCurrentPosition({
       enableHighAccuracy: true,
       timeout: 8000,
@@ -468,7 +457,6 @@ async function getCurrentOrigin() {
     return { origin: `${latitude},${longitude}`, error: null };
   } catch (firstError) {
     try {
-      // Reintento: menos exigente y con timeout mayor
       const position = await getCurrentPosition({
         enableHighAccuracy: false,
         timeout: 15000,
@@ -484,51 +472,27 @@ async function getCurrentOrigin() {
   }
 }
 
-/**
- * Traduce un error de Geolocation API a un mensaje legible.
- *
- * @param {unknown} err
- * @returns {string}
- */
 function formatGeolocationError(err) {
   const code = typeof err === 'object' && err !== null && 'code' in err ? Number(err.code) : NaN;
 
-  if (code === 1) return 'Permiso de ubicacion denegado en navegador o sistema operativo.';
-  if (code === 2) return 'Ubicacion no disponible (sin señal o servicio de localizacion).';
-  if (code === 3) return 'Tiempo de espera agotado al obtener ubicacion.';
+  if (code === 1) return 'Permiso de ubicación denegado en navegador o sistema operativo.';
+  if (code === 2) return 'Ubicación no disponible (sin señal o servicio de localización).';
+  if (code === 3) return 'Tiempo de espera agotado al obtener ubicación.';
 
   const message = typeof err === 'object' && err !== null && 'message' in err ? String(err.message) : '';
-  return message || 'Error desconocido de geolocalizacion.';
+  return message || 'Error desconocido de geolocalización.';
 }
 
-/**
- * Wrapper en promesa para navigator.geolocation.getCurrentPosition.
- *
- * @param {PositionOptions} options
- * @returns {Promise<GeolocationPosition>}
- */
 function getCurrentPosition(options) {
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(resolve, reject, options);
   });
 }
 
-/**
- * Reporta al servidor el resultado de ejecucion del actuador.
- *
- * @param {'ok'|'error'} status
- * @param {string} message
- */
 function reportActuatorStatus(status, message) {
   socket.emit('actuator-status', { status, message });
 }
 
-/**
- * Extrae digitos a marcar desde texto libre o numero dictado en espanol.
- *
- * @param {string} input
- * @returns {string}
- */
 function extractDialDigits(input) {
   const rawDigits = String(input || '').replace(/\D/g, '');
   if (rawDigits) return rawDigits;
@@ -561,10 +525,6 @@ function extractDialDigits(input) {
   return digits.join('');
 }
 
-/**
- * @param {string} text
- * @returns {string}
- */
 function normalizeForNumberParsing(text) {
   return String(text || '')
     .toLowerCase()
@@ -576,8 +536,7 @@ function normalizeForNumberParsing(text) {
 }
 
 /**
- * Reproduce texto usando SpeechSynthesis cuando esta disponible.
- *
+ * Reproduce texto usando SpeechSynthesis cuando está disponible.
  * @param {string} text
  * @param {{ interrupt?: boolean }} options
  */
@@ -585,7 +544,8 @@ function speak(text, options = {}) {
   const synth = window.speechSynthesis;
 
   if (!synth) {
-    throw new Error('SpeechSynthesis no esta disponible en este navegador.');
+    console.warn('[TTS] SpeechSynthesis no está disponible.');
+    return;
   }
 
   if (options.interrupt) {

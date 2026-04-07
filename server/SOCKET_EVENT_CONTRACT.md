@@ -14,12 +14,16 @@ Evento: `system-state`
     "mode": "idle|listening|confirming|navigating",
     "lastCommand": "string|null",
     "connectedClients": 1,
-    "pendingAction": { "type": "...", "payload": {} } 
+    "pendingAction": { "type": "...", "payload": {} },
+    "lastResult": { "action": "...", "message": "...", "mode": "...", "at": "..." },
+    "devices": [{ "socketId": "...", "role": "pilot|companion|unassigned", "name": "..." }]
   },
   "mode": "...",
   "lastCommand": "...",
   "connectedClients": 1,
-  "pendingAction": null
+  "pendingAction": null,
+  "lastResult": null,
+  "devices": []
 }
 ```
 
@@ -100,3 +104,21 @@ Validaciones:
 - payload objeto
 - `command` no vacio
 - longitud maxima: 180
+
+## 6) device-register
+
+Entrada esperada desde cliente:
+
+```json
+{
+  "role": "pilot|companion",
+  "name": "Pilot HUD",
+  "capabilities": {
+    "navigation": true,
+    "telephony": false,
+    "remoteControl": false,
+    "voiceInput": true,
+    "gestures": true
+  }
+}
+```

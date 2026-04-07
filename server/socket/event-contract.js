@@ -1,7 +1,14 @@
 import { VOICE_INTENTS } from '../command-contract.js';
 
 /**
- * @param {{mode: string, lastCommand: string | null, connectedClients: number, pendingAction: any}} state
+ * @param {{
+ *   mode: string,
+ *   lastCommand: string | null,
+ *   connectedClients: number,
+ *   pendingAction: any,
+ *   lastResult?: any,
+ *   devices?: Array<any>
+ * }} state
  */
 export function buildSystemStateEvent(state) {
   return {
@@ -11,13 +18,17 @@ export function buildSystemStateEvent(state) {
       mode: state.mode,
       lastCommand: state.lastCommand,
       connectedClients: state.connectedClients,
-      pendingAction: state.pendingAction || null
+      pendingAction: state.pendingAction || null,
+      lastResult: state.lastResult || null,
+      devices: Array.isArray(state.devices) ? state.devices : []
     },
     // Compatibilidad con frontend actual
     mode: state.mode,
     lastCommand: state.lastCommand,
     connectedClients: state.connectedClients,
-    pendingAction: state.pendingAction || null
+    pendingAction: state.pendingAction || null,
+    lastResult: state.lastResult || null,
+    devices: Array.isArray(state.devices) ? state.devices : []
   };
 }
 

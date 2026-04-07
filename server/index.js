@@ -47,6 +47,39 @@ const apiRateLimiter = createRateLimiter({
   maxRequests: 60
 });
 
+const DEVICE_ROLE_CONFIG = Object.freeze({
+  pilot: {
+    label: 'Pilot HUD',
+    capabilities: {
+      navigation: true,
+      telephony: false,
+      remoteControl: false,
+      voiceInput: true,
+      gestures: true
+    }
+  },
+  companion: {
+    label: 'Companion',
+    capabilities: {
+      navigation: false,
+      telephony: true,
+      remoteControl: true,
+      voiceInput: false,
+      gestures: false
+    }
+  },
+  unassigned: {
+    label: 'Pantalla',
+    capabilities: {
+      navigation: false,
+      telephony: false,
+      remoteControl: false,
+      voiceInput: false,
+      gestures: false
+    }
+  }
+});
+
 app.use(express.static(join(__dirname, '..', 'public')));
 app.use(createCorsMiddleware({ allowedOrigins }));
 
@@ -127,6 +160,7 @@ app.get('/api/route', apiRateLimiter, async (req, res) => {
 
 const globalSystemState = createInitialSystemState();
 const perSocketState = new Map();
+const socketDevices = new Map();
 let connectedClients = 0;
 
 function getStateForSocket(socketId) {
@@ -150,19 +184,136 @@ function updateConnectedClients(nextCount) {
   }
 }
 
-function emitState(socket) {
-  const state = getStateForSocket(socket.id);
-  const payload = buildSystemStateEvent(state);
+function createDefaultDevice(socketId) {
+  return {
+    socketId,
+    role: 'unassigned',
+    label: DEVICE_ROLE_CONFIG.unassigned.label,
+    name: `Pantalla ${socketDevices.size + 1}`,
+    capabilities: { ...DEVICE_ROLE_CONFIG.unassigned.capabilities },
+    connectedAt: new Date().toISOString()
+  };
+}
+
+function normalizeDeviceRegistration(socket, payload) {
+  const requestedRole = extractInputText(payload?.role);
+  const role = Object.prototype.hasOwnProperty.call(DEVICE_ROLE_CONFIG, requestedRole)
+    ? requestedRole
+    : 'unassigned';
+  const roleConfig = DEVICE_ROLE_CONFIG[role];
+  const requestedName = extractInputText(payload?.name).slice(0, 60);
+  const previous = socketDevices.get(socket.id);
+
+  return {
+    socketId: socket.id,
+    role,
+    label: roleConfig.label,
+    name: requestedName || roleConfig.label,
+    capabilities: {
+      navigation: Boolean(payload?.capabilities?.navigation ?? roleConfig.capabilities.navigation),
+      telephony: Boolean(payload?.capabilities?.telephony ?? roleConfig.capabilities.telephony),
+      remoteControl: Boolean(payload?.capabilities?.remoteControl ?? roleConfig.capabilities.remoteControl),
+      voiceInput: Boolean(payload?.capabilities?.voiceInput ?? roleConfig.capabilities.voiceInput),
+      gestures: Boolean(payload?.capabilities?.gestures ?? roleConfig.capabilities.gestures)
+    },
+    connectedAt: previous?.connectedAt || new Date().toISOString()
+  };
+}
+
+function summarizeDevices() {
+  const roleOrder = { pilot: 0, companion: 1, unassigned: 2 };
+
+  return Array.from(socketDevices.values())
+    .sort((a, b) => {
+      const roleDiff = (roleOrder[a.role] ?? 99) - (roleOrder[b.role] ?? 99);
+      if (roleDiff !== 0) return roleDiff;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    })
+    .map((device) => ({
+      socketId: device.socketId,
+      role: device.role,
+      label: device.label,
+      name: device.name,
+      capabilities: { ...device.capabilities },
+      connectedAt: device.connectedAt
+    }));
+}
+
+function syncDevicesIntoStates() {
+  const devices = summarizeDevices();
+  globalSystemState.devices = devices;
+  globalSystemState.connectedClients = connectedClients;
+
+  for (const state of perSocketState.values()) {
+    state.devices = devices;
+    state.connectedClients = connectedClients;
+  }
+
+  return devices;
+}
+
+function emitAllStates() {
+  syncDevicesIntoStates();
 
   if (STATE_SCOPE === 'global') {
-    io.emit('system-state', payload);
+    io.emit('system-state', buildSystemStateEvent(globalSystemState));
     return;
   }
 
-  socket.emit('system-state', payload);
+  for (const [socketId, socket] of io.sockets.sockets) {
+    const state = getStateForSocket(socketId);
+    socket.emit('system-state', buildSystemStateEvent(state));
+  }
+}
+
+function emitActionResult(socket, payload) {
+  if (STATE_SCOPE === 'global') {
+    io.emit('action-result', payload);
+    return;
+  }
+
+  socket.emit('action-result', payload);
+}
+
+function roleSockets(role) {
+  return Array.from(io.sockets.sockets.values()).filter((candidate) => {
+    const device = socketDevices.get(candidate.id);
+    return device?.role === role;
+  });
+}
+
+function resolveActuatorTarget(socket, action) {
+  if (STATE_SCOPE !== 'global') return socket;
+
+  const sourceDevice = socketDevices.get(socket.id);
+  const navigationActionTypes = new Set([
+    'start_voice_navigation',
+    'stop_voice_navigation',
+    'repeat_last_message',
+    'navigate_google_maps_directions',
+    'navigate_google_maps'
+  ]);
+
+  if (navigationActionTypes.has(action.type)) {
+    return roleSockets('pilot')[0] || socket;
+  }
+
+  if (action.type === 'call_contact') {
+    if (sourceDevice?.capabilities?.telephony) return socket;
+
+    const telephonyDevice = roleSockets('companion').find((candidate) => {
+      const device = socketDevices.get(candidate.id);
+      return Boolean(device?.capabilities?.telephony);
+    });
+
+    return telephonyDevice || roleSockets('pilot')[0] || socket;
+  }
+
+  return socket;
 }
 
 io.on('connection', (socket) => {
+  socketDevices.set(socket.id, createDefaultDevice(socket.id));
   updateConnectedClients(connectedClients + 1);
   const state = getStateForSocket(socket.id);
   state.connectedClients = connectedClients;
@@ -173,7 +324,20 @@ io.on('connection', (socket) => {
     stateScope: STATE_SCOPE
   });
 
-  socket.emit('system-state', buildSystemStateEvent(state));
+  emitAllStates();
+
+  socket.on('device-register', (data) => {
+    const nextDevice = normalizeDeviceRegistration(socket, data);
+    socketDevices.set(socket.id, nextDevice);
+
+    logEvent('info', 'socket.device.registered', {
+      socketId: socket.id,
+      role: nextDevice.role,
+      name: nextDevice.name
+    });
+
+    emitAllStates();
+  });
 
   socket.on('voice-command', (data) => {
     const stateForSocket = getStateForSocket(socket.id);
@@ -192,7 +356,7 @@ io.on('connection', (socket) => {
         code: payloadValidation.code
       });
 
-      socket.emit('action-result', invalidResult);
+      emitActionResult(socket, invalidResult);
       return;
     }
 
@@ -206,7 +370,7 @@ io.on('connection', (socket) => {
         newMode: stateForSocket.mode
       });
 
-      socket.emit('action-result', invalidResult);
+      emitActionResult(socket, invalidResult);
       return;
     }
 
@@ -246,7 +410,7 @@ io.on('connection', (socket) => {
       }
     }
 
-    socket.emit('action-result', actionResultPayload);
+    emitActionResult(socket, actionResultPayload);
 
     if (result.action === VOICE_INTENTS.CONFIRM && transition.actionToExecute) {
       logEvent('info', 'actuator.execute.confirmed', {
@@ -271,7 +435,7 @@ io.on('connection', (socket) => {
       connectedClients
     });
 
-    emitState(socket);
+    emitAllStates();
   });
 
   socket.on('actuator-status', (data) => {
@@ -303,6 +467,7 @@ io.on('connection', (socket) => {
       perSocketState.delete(socket.id);
     }
 
+    socketDevices.delete(socket.id);
     updateConnectedClients(Math.max(0, connectedClients - 1));
 
     logEvent('info', 'socket.disconnection', {
@@ -310,6 +475,8 @@ io.on('connection', (socket) => {
       connectedClients,
       stateScope: STATE_SCOPE
     });
+
+    emitAllStates();
   });
 });
 
@@ -320,7 +487,8 @@ io.on('connection', (socket) => {
 function executeActuator(socket, action) {
   if (!action || !action.type) return;
 
-  socket.emit('actuator-exec', buildActuatorExecEvent(action));
+  const targetSocket = resolveActuatorTarget(socket, action);
+  targetSocket.emit('actuator-exec', buildActuatorExecEvent(action));
 }
 
 /**

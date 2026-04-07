@@ -2,6 +2,11 @@
 
 Sistema interactivo y ubicuo que permite al motorista controlar funciones de navegacion, llamadas y mas, mediante **comandos de voz** y **gestos de cabeza**, sin soltar las manos del manillar.
 
+La interfaz se distribuye ahora en dos pantallas:
+
+- `pilot`: HUD principal para el motorista
+- `companion`: segunda pantalla para control remoto y monitorizacion del sistema
+
 Proyecto de la asignatura **Sistemas Interactivos y Ubicuos (SIU)** - UC3M.
 
 ## Estado Actual Del Backend
@@ -119,11 +124,16 @@ Los eventos se emiten con una estructura estandar (`ok`, `event`, `data`) manten
 
 ## Uso
 
-1. Abrir `http://localhost:3000` en el navegador (Chrome recomendado).
-2. Pulsar **"Activar microfono"** para iniciar el reconocimiento de voz.
-3. Pulsar **"Activar camara"** para iniciar la deteccion de gestos.
-4. Decir **"Hey MotoNav"** seguido de un comando (ej: "buscar gasolinera").
-5. Confirmar o cancelar con gestos de cabeza (asentir / negar).
+1. Abrir una pantalla `pilot` en `http://localhost:3000/?role=pilot`.
+2. Abrir una segunda pantalla `companion` en `http://localhost:3000/?role=companion`.
+3. En `pilot`, pulsar **"Activar microfono"** para iniciar el reconocimiento de voz.
+4. En `pilot`, pulsar **"Activar camara"** para iniciar la deteccion de gestos.
+5. Probar comandos por voz en `pilot` o enviar comandos remotos desde `companion`.
+
+Flujos recomendados:
+
+- `pilot`: HUD completo con voz, gestos y navegacion
+- `companion`: comandos rapidos, estado sincronizado y listado de pantallas conectadas
 
 ## Tecnologias
 

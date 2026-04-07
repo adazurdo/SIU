@@ -7,7 +7,31 @@
   <meta name="description" content="MotoNav: sistema de control para casco de moto con comandos de voz y gestos de cabeza. Interfaz HUD para visera.">
   <link rel="stylesheet" href="css/styles.css">
 </head>
-<body>
+<body data-role="unassigned">
+  <div id="role-selector" aria-label="Seleccion de pantalla">
+    <div class="role-selector-panel">
+      <p class="role-selector-kicker">MotoNav distribuido</p>
+      <h1>Elige el papel de esta pantalla</h1>
+      <p class="role-selector-copy">
+        Usa <strong>pilot</strong> como HUD principal y <strong>companion</strong> como segunda pantalla
+        para lanzar comandos y seguir el estado del sistema.
+      </p>
+
+      <div class="role-selector-grid">
+        <button class="role-card" type="button" data-role-option="pilot">
+          <span class="role-card-tag">pilot</span>
+          <strong>HUD principal</strong>
+          <span>Activa voz, gestos, navegacion y feedback para el motorista.</span>
+        </button>
+
+        <button class="role-card" type="button" data-role-option="companion">
+          <span class="role-card-tag">companion</span>
+          <strong>Panel remoto</strong>
+          <span>Segunda pantalla para enviar comandos y monitorizar el estado sincronizado.</span>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- Layer 0: Road background -->
   <div id="hud-background" aria-hidden="true"></div>
@@ -57,6 +81,94 @@
 
   </div>
 
+  <section id="companion-app" aria-label="Panel remoto de MotoNav">
+    <div class="companion-shell">
+      <header class="companion-header">
+        <div class="companion-header-copy">
+          <span id="companion-role-chip" class="companion-role-chip">Seleccion pendiente</span>
+          <h1>Panel remoto MotoNav</h1>
+          <p>
+            Controla el sistema distribuido desde una segunda pantalla y verifica que el HUD principal
+            recibe y ejecuta las acciones correctas.
+          </p>
+        </div>
+
+        <div class="companion-summary">
+          <div class="summary-pill">
+            <span class="summary-label">Dispositivos</span>
+            <span id="companion-connected-count" class="summary-value">0</span>
+          </div>
+
+          <div class="summary-pill">
+            <span class="summary-label">Modo</span>
+            <span id="companion-mode" class="summary-value">En reposo</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="companion-grid">
+        <section class="companion-card">
+          <h2>Comandos remotos</h2>
+          <p class="card-copy">
+            Envia acciones al sistema sin abrir el HUD en esta pantalla.
+          </p>
+
+          <div class="quick-actions">
+            <button class="companion-btn primary" type="button" data-command="buscar gasolinera">Buscar gasolinera</button>
+            <button class="companion-btn" type="button" data-command="repetir">Repetir</button>
+            <button class="companion-btn" type="button" data-command="confirmar">Confirmar</button>
+            <button class="companion-btn danger" type="button" data-command="cancelar">Cancelar</button>
+          </div>
+
+          <form id="manual-command-form" class="command-form">
+            <label for="manual-command-input">Comando manual</label>
+            <div class="command-input-row">
+              <input
+                id="manual-command-input"
+                name="command"
+                type="text"
+                placeholder='Ej: quiero ir a universidad carlos iii'
+                autocomplete="off"
+              >
+              <button class="companion-btn primary" type="submit">Enviar</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="companion-card">
+          <h2>Estado sincronizado</h2>
+
+          <div class="status-list">
+            <div class="status-item">
+              <span class="status-label">Ultimo comando</span>
+              <strong id="companion-last-command">Sin comandos todavia</strong>
+            </div>
+
+            <div class="status-item">
+              <span class="status-label">Ultimo resultado</span>
+              <strong id="companion-last-result">Sin respuesta todavia</strong>
+            </div>
+
+            <div class="status-item">
+              <span class="status-label">Accion pendiente</span>
+              <strong id="companion-pending-action">No hay acciones pendientes</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="companion-card">
+          <h2>Pantallas conectadas</h2>
+          <ul id="companion-devices-list" class="device-list"></ul>
+        </section>
+
+        <section class="companion-card">
+          <h2>Actividad reciente</h2>
+          <ul id="companion-activity-list" class="activity-list"></ul>
+        </section>
+      </div>
+    </div>
+  </section>
+
   <!-- Voice status overlay -->
   <div id="voice-status-overlay"></div>
 
@@ -77,6 +189,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
   <!-- App modules -->
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

@@ -64,6 +64,7 @@ const gestureVideo = document.getElementById('gesture-video');
 let deviceRole = readRoleFromUrl();
 let currentMode = 'idle';
 let lastSystemMessage = '';
+let lastSpokenMessage = '';
 let voiceController = null;
 let gestureController = null;
 
@@ -122,9 +123,12 @@ socket.on('system-state', (payload) => {
 socket.on('action-result', (payload) => {
   const result = unwrapEventData(payload);
   const message = typeof result.message === 'string' ? result.message : '';
+  const isRepeatAction = result.action === 'repeat';
 
   if (message) {
-    lastSystemMessage = message;
+    if (!isRepeatAction) {
+      lastSystemMessage = message;
+    }
 
     if (deviceRole === 'pilot') {
       showSystemBubble(message);
@@ -648,8 +652,8 @@ async function runActuator(instruction) {
     }
 
     case 'repeat_last_message': {
-      const text = lastSystemMessage || 'No hay ninguna indicacion anterior para repetir.';
-      speak(text);
+      const text = lastSpokenMessage || lastSystemMessage || 'No hay ninguna indicacion anterior para repetir.';
+      speak(text, { interrupt: true });
 
       if (deviceRole === 'pilot') {
         showSystemBubble(`Repitiendo: ${text}`);
@@ -982,6 +986,9 @@ function normalizeForNumberParsing(text) {
 
 function speak(text, options = {}) {
   const synth = window.speechSynthesis;
+  const normalizedText = String(text || '').trim();
+
+  if (!normalizedText) return;
 
   if (!synth) {
     console.warn('[TTS] SpeechSynthesis no esta disponible.');
@@ -992,7 +999,9 @@ function speak(text, options = {}) {
     synth.cancel();
   }
 
-  const utterance = new SpeechSynthesisUtterance(text);
+  lastSpokenMessage = normalizedText;
+
+  const utterance = new SpeechSynthesisUtterance(normalizedText);
   utterance.lang = 'es-ES';
   synth.speak(utterance);
 }
